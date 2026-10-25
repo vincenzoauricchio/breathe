@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <title>Breathe</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <style>
+    :root {
+      --bg: #0b1020;
+      --fg: #f2f5fb;
+      --muted: rgba(242, 245, 251, 0.55);
+      --faint: rgba(242, 245, 251, 0.12);
+      --glass: rgba(255, 255, 255, 0.07);
+      --glass-border: rgba(255, 255, 255, 0.14);
+      --in-a: #5eead4;
+      --in-b: #38bdf8;
+      --out-a: #a78bfa;
+      --out-b: #6366f1;
+      --ease: cubic-bezier(0.45, 0, 0.55, 1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Slowly drifting colour blobs behind everything */
+    .ambient { position: fixed; inset: 0; overflow: hidden; z-index: 0; }
+    .blob {
+      position: absolute;
+      width: 70vmax; height: 70vmax;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.35;
+    }
+    .blob.a { background: var(--in-b);  top: -30vmax; left: -20vmax; animation: drift-a 28s ease-in-out infinite alternate; }
+    .blob.b { background: var(--out-b); bottom: -35vmax; right: -25vmax; animation: drift-b 34s ease-in-out infinite alternate; }
+    @keyframes drift-a { to { transform: translate(12vmax, 10vmax) scale(1.1); } }
+    @keyframes drift-b { to { transform: translate(-10vmax, -12vmax) scale(1.15); } }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: calc(env(safe-area-inset-top) + 28px) 24px calc(env(safe-area-inset-bottom) + 32px);
+    }
+
+    header { text-align: center; }
+    .brand { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.02em; }
+    .chip {
+      display: inline-flex; gap: 8px; align-items: center;
+      margin-top: 10px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--in-a); }
+
+    /* Breathing orb */
+    .stage {
+      position: relative;
+      width: min(78vw, 340px);
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+    }
+    .ring { position: absolute; inset: 0; transform: rotate(-90deg); }
+    .ring circle { fill: none; stroke-width: 3; }
+    .ring .track { stroke: var(--faint); }
+    .ring .progress {
+      stroke: url(#grad);
+      stroke-linecap: round;
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+    .stage.running .ring .progress { opacity: 1; }
+    .orb, .halo {
+      position: absolute;
+      border-radius: 50%;
+      transition-property: transform, opacity;
+      transition-timing-function: var(--ease);
+      transition-duration: 1.2s;
+    }
+    .halo {
+      inset: 8%;
+      background: radial-gradient(circle, rgba(94, 234, 212, 0.35), transparent 70%);
+      transform: scale(0.6);
+      opacity: 0.4;
+    }
+    .orb {
+      inset: 14%;
+      background:
+        radial-gradient(circle at 35% 30%, rgba(255,255,255,0.45), transparent 45%),
+        linear-gradient(140deg, var(--in-a), var(--in-b) 55%, var(--out-b));
+      box-shadow:
+        0 0 60px rgba(56, 189, 248, 0.45),
+        inset 0 -20px 40px rgba(0, 0, 0, 0.25);
+      transform: scale(0.55);
+    }
+    .orb::after {
+      content: "";
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      background: linear-gradient(140deg, var(--out-a), var(--out-b));
+      opacity: 0;
+      transition-property: opacity;
+      transition-duration: inherit;
+      transition-timing-function: inherit;
+    }
+    .stage.in  .orb  { transform: scale(1); }
+    .stage.in  .halo { transform: scale(1.12); opacity: 1; }
+    .stage.out .orb  { transform: scale(0.55); }
+    .stage.out .orb::after { opacity: 0.85; }
+    .stage.out .halo { transform: scale(0.6); opacity: 0.4; }
+
+    .label { position: relative; text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.25); }
+    .phase { font-size: 1.35rem; font-weight: 500; letter-spacing: 0.01em; transition: opacity 0.4s; }
+    .count {
+      font-size: 4rem; font-weight: 200; line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+      min-height: 1.1em;
+    }
+
+    .stats { color: var(--muted); font-size: 0.9rem; min-height: 1.2em; text-align: center; font-variant-numeric: tabular-nums; }
+
+    footer { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+    .btn {
+      width: 100%;
+      padding: 18px 24px;
+      border-radius: 20px;
+      border: 1px solid var(--glass-border);
+      background: var(--glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color: var(--fg);
+      font: inherit;
+      font-size: 1.05rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s, background 0.2s;
+    }
+    .btn.primary {
+      border: none;
+      background: linear-gradient(135deg, var(--in-a), var(--in-b));
+      color: #06202a;
+      box-shadow: 0 10px 30px rgba(56, 189, 248, 0.35);
+    }
+    .btn:active { transform: scale(0.97); }
+    .hint { color: var(--muted); font-size: 0.85rem; text-align: center; line-height: 1.5; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .blob { animation: none; }
+      .orb, .halo, .orb::after { transition-duration: 0s !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient"><div class="blob a"></div><div class="blob b"></div></div>
+
+  <main class="app">
+    <header>
+      <div class="brand">Breathe</div>
+      <div class="chip"><span class="dot"></span>4s in · 6s out</div>
+    </header>
+
+    <div class="stage out" id="stage">
+      <div class="halo"></div>
+      <div class="orb"></div>
+      <svg class="ring" viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#5eead4"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <circle class="track" cx="50" cy="50" r="48" pathLength="1"/>
+        <circle class="progress" id="progress" cx="50" cy="50" r="48" pathLength="1"/>
+      </svg>
+      <div class="label" aria-live="polite">
+        <div class="phase" id="phase">Ready</div>
+        <div class="count" id="count"></div>
+      </div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <footer>
+      <button class="btn primary" id="toggle">Start</button>
+      <p class="hint" id="hint">Follow the circle. You're safe.</p>
+    </footer>
+  </main>
+
+  <script>
+    const PHASES = [
+      { name: 'Breathe in',  seconds: 4, cls: 'in'  },
+      { name: 'Breathe out', seconds: 6, cls: 'out' },
+    ];
+
+    const stage = document.getElementById('stage');
+    const progress = document.getElementById('progress');
+    const phaseEl = document.getElementById('phase');
+    const countEl = document.getElementById('count');
+    const statsEl = document.getElementById('stats');
+    const toggle = document.getElementById('toggle');
+    const hint = document.getElementById('hint');
+
+    let running = false;
+    let timer = null;
+    let wakeLock = null;
+    let breaths = 0;
+
+    function setDuration(seconds) {
+      for (const el of stage.querySelectorAll('.orb, .halo')) {
+        el.style.transitionDuration = seconds + 's';
+      }
+    }
+
+    function animateRing(seconds) {
+      progress.style.transition = 'none';
+      progress.style.strokeDashoffset = 1;
+      progress.getBoundingClientRect(); // restart the transition from empty
+      progress.style.transition = `stroke-dashoffset ${seconds}s linear, opacity 0.4s`;
+      progress.style.strokeDashoffset = 0;
+    }
+
+    function runPhase(index) {
+      const phase = PHASES[index];
+      let remaining = phase.seconds;
+
+      setDuration(phase.seconds);
+      stage.className = 'stage running ' + phase.cls;
+      animateRing(phase.seconds);
+      phaseEl.textContent = phase.name;
+      countEl.textContent = remaining;
+      if (navigator.vibrate) navigator.vibrate(30);
+
+      timer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+          countEl.textContent = remaining;
+          return;
+        }
+        clearInterval(timer);
+        if (phase.cls === 'out') {
+          breaths++;
+          statsEl.textContent = breaths === 1 ? '1 breath' : `${breaths} breaths`;
+        }
+        runPhase((index + 1) % PHASES.length);
+      }, 1000);
+    }
+
+    async function start() {
+      running = true;
+      breaths = 0;
+      statsEl.textContent = '';
+      toggle.textContent = 'Stop';
+      toggle.classList.remove('primary');
+      hint.textContent = 'Breathe slowly through your nose.';
+      try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
+      runPhase(0);
+    }
+
+    function stop() {
+      running = false;
+      clearInterval(timer);
+      toggle.textContent = 'Start';
+      toggle.classList.add('primary');
+      hint.textContent = "Follow the circle. You're safe.";
+      setDuration(1.2);
+      stage.className = 'stage out';
+      progress.style.transition = 'opacity 0.4s';
+      phaseEl.textContent = breaths ? 'Well done' : 'Ready';
+      countEl.textContent = '';
+      wakeLock?.release().catch(() => {});
+      wakeLock = null;
+    }
+
+    toggle.addEventListener('click', () => running ? stop() : start());
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
