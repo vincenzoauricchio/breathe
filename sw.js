@@ -1,4 +1,4 @@
-const CACHE = 'breathe-v3';
+const CACHE = 'breathe-v4';
 const FILES = ['./', 'index.html', 'manifest.json', 'icon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

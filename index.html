@@ -172,6 +172,25 @@
     .btn:active { transform: scale(0.97); }
     .hint { color: var(--muted); font-size: 0.85rem; text-align: center; line-height: 1.5; }
 
+    .sound {
+      position: absolute;
+      top: calc(env(safe-area-inset-top) + 20px);
+      right: 20px;
+      width: 44px; height: 44px;
+      display: grid; place-items: center;
+      border-radius: 50%;
+      border: 1px solid var(--glass-border);
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: var(--fg);
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.2s;
+    }
+    .sound:active { transform: scale(0.92); }
+    .sound[aria-pressed="false"] { opacity: 0.55; }
+    .sound svg { width: 20px; height: 20px; }
+
     @media (prefers-reduced-motion: reduce) {
       .blob { animation: none; }
       .orb, .halo, .orb::after { transition-duration: 0s !important; }
@@ -182,6 +201,7 @@
   <div class="ambient"><div class="blob a"></div><div class="blob b"></div></div>
 
   <main class="app">
+    <button class="sound" id="sound" aria-label="Sound" aria-pressed="true"></button>
     <header>
       <div class="brand">Breathe</div>
       <div class="chip"><span class="dot"></span>4s in · 6s out</div>
@@ -233,6 +253,55 @@
     let wakeLock = null;
     let breaths = 0;
 
+    // Soft chime at each phase change: higher note to breathe in, lower to breathe out.
+    const soundBtn = document.getElementById('sound');
+    const ICON_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>';
+    const ICON_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>';
+    let audio = null;
+    let soundOn = true;
+    try { soundOn = localStorage.getItem('sound') !== 'off'; } catch {}
+
+    function renderSound() {
+      soundBtn.innerHTML = soundOn ? ICON_ON : ICON_OFF;
+      soundBtn.setAttribute('aria-pressed', soundOn);
+      soundBtn.setAttribute('aria-label', soundOn ? 'Sound on' : 'Sound off');
+    }
+
+    // iOS only allows audio once it has been unlocked by a tap.
+    function unlockAudio() {
+      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+    }
+
+    function chime(freq) {
+      if (!soundOn || !audio) return;
+      const now = audio.currentTime;
+      const out = audio.createGain();
+      out.gain.setValueAtTime(0, now);
+      out.gain.linearRampToValueAtTime(0.18, now + 0.06);
+      out.gain.exponentialRampToValueAtTime(0.0001, now + 2.2);
+      out.connect(audio.destination);
+      // A quiet octave on top makes it sound like a soft bell instead of a beep.
+      for (const [mult, level] of [[1, 1], [2, 0.18]]) {
+        const osc = audio.createOscillator();
+        const g = audio.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq * mult;
+        g.gain.value = level;
+        osc.connect(g).connect(out);
+        osc.start(now);
+        osc.stop(now + 2.3);
+      }
+    }
+
+    soundBtn.addEventListener('click', () => {
+      soundOn = !soundOn;
+      try { localStorage.setItem('sound', soundOn ? 'on' : 'off'); } catch {}
+      renderSound();
+      if (soundOn) { unlockAudio(); chime(528); }
+    });
+    renderSound();
+
     function setDuration(seconds) {
       for (const el of stage.querySelectorAll('.orb, .halo')) {
         el.style.transitionDuration = seconds + 's';
@@ -257,6 +326,7 @@
       phaseEl.textContent = phase.name;
       countEl.textContent = remaining;
       if (navigator.vibrate) navigator.vibrate(30);
+      chime(phase.cls === 'in' ? 528 : 396);
 
       timer = setInterval(() => {
         remaining--;
@@ -275,6 +345,7 @@
 
     async function start() {
       running = true;
+      unlockAudio();
       breaths = 0;
       statsEl.textContent = '';
       toggle.textContent = 'Stop';
